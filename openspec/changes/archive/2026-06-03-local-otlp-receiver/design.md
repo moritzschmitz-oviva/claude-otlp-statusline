@@ -67,6 +67,26 @@ No auth helper needed (local HTTP). No GCP dependency.
 Default: `$0.42 ↑1.2M` (cost + total tokens, compact).
 If no active session or receiver not running: empty string (statusline renders nothing).
 
+## Forwarding to GCP
+
+`CLAUDE_OTLP_FORWARD_ENDPOINT` enables forwarding received payloads to a secondary OTLP endpoint (e.g. `telemetry.googleapis.com`).
+
+`telemetry.googleapis.com` requires a GCP Bearer token. Claude Code handles this via `otelHeadersHelper` (`settings.json`): before each export, Claude Code calls the helper script which runs `gcloud auth print-access-token` and returns `{"Authorization":"Bearer <token>","x-goog-user-project":"<project>"}`. These headers are attached to requests sent to `localhost:4318`.
+
+The `forward()` function must pass the original request headers through — not just `Content-Type`. The token is already present in the incoming request; no separate auth mechanism needed. Token expiry is not a concern for fire-and-forget forwarding since the token was freshly minted when Claude Code called the helper.
+
+```
+Claude Code
+  │  POST /v1/logs
+  │  Authorization: Bearer <token>   ← from otelHeadersHelper
+  ▼
+localhost:4318
+  │  store to SQLite
+  │  forward with original headers   ← must pass Authorization through
+  ▼
+telemetry.googleapis.com  ✓
+```
+
 ## Non-goals
 
 - No GCP, no cloud, no auth

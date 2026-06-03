@@ -22,13 +22,15 @@ Claude Code
 
 ## Key OTLP fields (from telemetry-platform-poc POC)
 
-`api_request` event labels:
+`api_request` event labels (actual keys — dot notation matters):
 - `cost_usd` — direct cost per request (no recalculation needed)
 - `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens`
-- `session_id` — aggregate per session
+- `session.id` — aggregate per session (NOT `session_id` — underscore variant is wrong)
 - `model`, `user_email`, `organization_id`
 
 Event types observed: `api_request`, `tool_result`, `tool_decision`, `hook_execution_start`, `hook_execution_complete`
+
+SQLite table: `api_requests`. Schema: `session_id, request_id, cost_usd, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, model, ts`.
 
 ## Prior art
 
@@ -41,4 +43,18 @@ None. Fully local. SQLite only. No cloud dependency.
 
 ## Config
 
-Claude Code uses `OTEL_EXPORTER_OTLP_ENDPOINT` + `managed-settings.json` (or env) to point at a custom OTLP endpoint. Receiver must listen on OTLP HTTP (`/v1/logs`, `/v1/metrics`).
+Never use `managed-settings.json` — all config in `settings.json` only.
+All env vars (`CLAUDE_CODE_ENABLE_TELEMETRY`, `OTEL_LOGS_EXPORTER`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_PROTOCOL`) go in `settings.json` `env` block.
+`otelHeadersHelper` in `settings.json` points to a script that returns GCP auth headers as JSON — Claude Code calls it before each OTLP export and attaches the headers to requests (including to localhost:4318).
+`CLAUDE_OTLP_FORWARD_ENDPOINT` is read by the `serve` process, not Claude Code — set it in the daemon's env (launchd plist `EnvironmentVariables`, or shell export), NOT in `settings.json`.
+GCP forwarding works by passing the incoming request headers through unchanged — the Bearer token from `otelHeadersHelper` is already present in the request arriving at localhost:4318.
+Binary installs to `~/.local/bin/` via `go build -o ~/.local/bin/claude-otlp ./cmd/claude-otlp`.
+
+## Session ID
+
+`CLAUDE_CODE_SESSION_ID` env var is always set by Claude Code — use it directly. `status session` reads from stdin JSON (`session_id` field) first, falls back to env var, then JSONL walk.
+
+## Debugging
+
+Run daemon foreground (captures live payloads): `_CLAUDE_OTLP_DAEMON=1 ~/.local/bin/claude-otlp serve --addr localhost:4318`
+`serve` self-daemonizes by default (exits if port already open); `--foreground` flag also bypasses.
