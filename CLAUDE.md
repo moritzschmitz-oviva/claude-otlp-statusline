@@ -12,12 +12,12 @@ Claude Code emits accurate OTLP telemetry to `telemetry.googleapis.com`. The `ap
 
 ## Architecture
 
-```
-Claude Code
-  └─ OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-       └─ local receiver (Go binary, daemon)
-            └─ SQLite (~/.local/share/claude-otlp/telemetry.db)
-                 └─ statusline binary  →  tmux / starship / p10k
+```mermaid
+flowchart LR
+    CC["Claude Code"] -->|"OTLP HTTP\nlocalhost:4318"| serve["claude-otlp serve"]
+    serve --> db[("SQLite\n~/.local/share/claude-otlp\n/telemetry.db")]
+    db --> status["claude-otlp status"]
+    status -->|"$0.42 ↑1.2M"| sl["tmux / starship / p10k"]
 ```
 
 ## Key OTLP fields (from telemetry-platform-poc POC)

@@ -10,16 +10,18 @@ Claude Code already emits accurate OTLP telemetry (`api_request` events with ver
 
 ## Architecture
 
-```
-Claude Code
-  OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-    │
-    ▼
-claude-otlp serve   →  ~/.local/share/claude-otlp/telemetry.db
-                               │
-                    claude-otlp status session  →  {"cost_usd":0.42,"total_tokens":1234567,...}
-                               │
-                    tmux / starship / p10k
+```mermaid
+flowchart LR
+    CC["Claude Code\nOTEL_EXPORTER_OTLP_ENDPOINT\n=http://localhost:4318"]
+    serve["claude-otlp serve"]
+    db[("~/.local/share/claude-otlp\n/telemetry.db")]
+    status["claude-otlp status session"]
+    sl["tmux / starship / p10k"]
+
+    CC -->|"POST /v1/logs"| serve
+    serve --> db
+    db --> status
+    status -->|"$0.42 ↑1.2M"| sl
 ```
 
 ## Install
