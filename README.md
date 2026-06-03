@@ -113,46 +113,22 @@ claude-otlp serve
 
 ## Statusline integration
 
-All examples parse the JSON output with `jq`.
+### iTerm2
 
-### tmux
+Uses [iTerm2 shell integration](https://iterm2.com/documentation-shell-integration.html) to push a user variable into the status bar.
 
-```bash
-# ~/.tmux.conf
-set -g status-right "#(claude-otlp status session | jq -r '\"\\(.cost_usd | tostring | .[0:5]) ↑\" + (.total_tokens / 1000000 | tostring | .[0:4]) + \"M\"') | %H:%M"
-```
-
-Or use a helper script at `~/.local/bin/claude-cost`:
-
-```bash
-#!/usr/bin/env bash
-claude-otlp status session | jq -r '"$\(.cost_usd) ↑\(.total_tokens)"' 2>/dev/null
-```
-
-```
-set -g status-right "#(claude-cost) | %H:%M"
-```
-
-### Starship
-
-```toml
-[custom.claude_cost]
-command = "claude-otlp status session | jq -r '\"$\\(.cost_usd)\"'"
-when = "true"
-shell = ["bash"]
-format = "[$output]($style) "
-style = "yellow"
-```
-
-### p10k (powerlevel10k)
+**1. Add to `~/.zshrc`** (after sourcing iTerm2 shell integration):
 
 ```zsh
-# In ~/.p10k.zsh, add a custom segment:
-function prompt_claude_cost() {
-  local cost
-  cost=$(claude-otlp status session 2>/dev/null | jq -r '"$\(.cost_usd)"')
-  [[ -n $cost ]] && p10k segment -f yellow -t "$cost"
+function iterm2_print_user_vars() {
+  iterm2_set_user_var claudecost "$(~/.local/bin/statusline-command.sh 2>/dev/null)"
 }
+```
+
+**2. Configure the status bar** — iTerm2 → Settings → Profiles → Session → Status Bar Enabled → Configure Status Bar → drag in "Interpolated String", set value to:
+
+```
+\(user.claudecost)
 ```
 
 ## Validation
