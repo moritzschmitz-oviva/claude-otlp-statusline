@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -25,7 +26,7 @@ func main() {
 		Use:   "claude-otlp",
 		Short: "Local OTLP receiver and statusline query for Claude Code telemetry",
 	}
-	root.AddCommand(serveCmd(), statusCmd())
+	root.AddCommand(serveCmd(), statusCmd(), setSpentCmd())
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -274,11 +275,66 @@ func statusMonthlyCmd() *cobra.Command {
 			if err != nil {
 				return jsonOut(map[string]any{})
 			}
-			return jsonOut(map[string]any{
+			result := map[string]any{
 				"month":        month,
 				"cost_usd":     stats.CostUSD,
 				"total_tokens": stats.TotalTokens,
-			})
+			}
+			if stats.OverrideActive {
+				correctedCost := stats.OverrideTarget + stats.PostOverrideCost
+				preOverrideRaw := stats.CostUSD - stats.PostOverrideCost
+				result["cost_usd"] = correctedCost
+				result["raw_cost_usd"] = stats.CostUSD
+				result["offset_usd"] = stats.OverrideTarget - preOverrideRaw
+				if correctedCost > stats.OverrideTarget*1.05 {
+					result["warning"] = "override_stale"
+				}
+			}
+			return jsonOut(result)
+		},
+	}
+	cmd.Flags().StringVar(&monthFlag, "month", "", "Month YYYY-MM (default: current)")
+	return cmd
+}
+
+func setSpentCmd() *cobra.Command {
+	var monthFlag string
+	cmd := &cobra.Command{
+		Use:   "set-spent <amount>",
+		Short: "Set monthly spend override (0 to clear)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			amount, err := strconv.ParseFloat(args[0], 64)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: invalid amount %q: must be a number\n", args[0])
+				os.Exit(1)
+			}
+			if amount < 0 {
+				fmt.Fprintf(os.Stderr, "error: amount must be non-negative\n")
+				os.Exit(1)
+			}
+
+			month := monthFlag
+			if month == "" {
+				month = time.Now().Format("2006-01")
+			}
+
+			db, err := store.Open()
+			if err != nil {
+				return fmt.Errorf("open db: %w", err)
+			}
+			defer db.Close()
+
+			if err := db.SetSpendOverride(month, amount); err != nil {
+				return fmt.Errorf("set override: %w", err)
+			}
+
+			if amount == 0 {
+				fmt.Printf("Spend override cleared for %s\n", month)
+			} else {
+				fmt.Printf("Spend override set for %s: $%.2f\n", month, amount)
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&monthFlag, "month", "", "Month YYYY-MM (default: current)")
