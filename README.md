@@ -63,20 +63,11 @@ Add to `~/.claude/settings.json`:
 claude-otlp serve
 ```
 
-To start automatically on login (macOS launchd):
-
-```bash
-cp com.moritzschmitz-oviva.claude-otlp.plist ~/Library/LaunchAgents/
-# Edit the plist: update ProgramArguments to match your binary path
-launchctl load ~/Library/LaunchAgents/com.moritzschmitz-oviva.claude-otlp.plist
-```
-
 Logs go to `/tmp/claude-otlp.log`.
 
 To verify it's running:
 
 ```bash
-launchctl list | grep claude-otlp
 curl -s http://localhost:4318/v1/logs -d '{}'
 ```
 
@@ -115,21 +106,9 @@ Session ID is auto-detected from `CLAUDE_CODE_SESSION_ID` (always set by Claude 
 
 `CLAUDE_OTLP_FORWARD_ENDPOINT` is read by the `serve` process itself, not by Claude Code — so it must be in the daemon's environment, not in `settings.json`.
 
-**Shell:**
-
 ```bash
 export CLAUDE_OTLP_FORWARD_ENDPOINT=https://telemetry.googleapis.com
 claude-otlp serve
-```
-
-**launchd plist** — add an `EnvironmentVariables` key:
-
-```xml
-<key>EnvironmentVariables</key>
-<dict>
-    <key>CLAUDE_OTLP_FORWARD_ENDPOINT</key>
-    <string>https://telemetry.googleapis.com</string>
-</dict>
 ```
 
 ## Statusline integration
