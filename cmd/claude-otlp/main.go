@@ -21,6 +21,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	logDebug = iota
+	logInfo
+	logWarn
+)
+
+var currentLogLevel = logInfo
+
+func logDebugf(format string, args ...any) {
+	if currentLogLevel <= logDebug {
+		log.Printf("DEBUG "+format, args...)
+	}
+}
+
+func logWarnf(format string, args ...any) {
+	log.Printf("warn: "+format, args...)
+}
+
 func main() {
 	root := &cobra.Command{
 		Use:   "claude-otlp",
@@ -41,6 +59,18 @@ func serveCmd() *cobra.Command {
 		Use:   "serve",
 		Short: "Start the OTLP HTTP receiver (persists api_request events to SQLite)",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			switch strings.ToLower(os.Getenv("CLAUDE_OTLP_LOG_LEVEL")) {
+			case "debug":
+				currentLogLevel = logDebug
+			case "warn":
+				currentLogLevel = logWarn
+			case "", "info":
+				currentLogLevel = logInfo
+			default:
+				currentLogLevel = logInfo
+				logWarnf("unknown log level %q, using info", os.Getenv("CLAUDE_OTLP_LOG_LEVEL"))
+			}
+
 			// Daemon mode (default): daemonize on first call, run in background.
 			// Skip if already running or if we are the daemon child.
 			if !foreground && os.Getenv("_CLAUDE_OTLP_DAEMON") == "" {
@@ -124,6 +154,7 @@ func logsHandler(db *store.DB, forwardBase string) http.HandlerFunc {
 			http.Error(w, "read body", http.StatusBadRequest)
 			return
 		}
+		logDebugf("recv /v1/logs %d bytes", len(body))
 
 		var req otlp.ExportLogsServiceRequest
 		if err := json.Unmarshal(body, &req); err != nil {
@@ -131,9 +162,20 @@ func logsHandler(db *store.DB, forwardBase string) http.HandlerFunc {
 			log.Printf("warn: parse OTLP logs: %v", err)
 		} else {
 			events := otlp.ParseApiRequests(&req)
+			logDebugf("parsed %d api_request events", len(events))
 			for _, e := range events {
-				if err := db.Insert(e); err != nil {
+				logDebugf("api_request session=%s request=%s cost=$%.4f model=%s", e.SessionID, e.RequestID, e.CostUSD, e.Model)
+				if e.SessionID == "" {
+					logWarnf("api_request has empty session_id (request_id=%s)", e.RequestID)
+				}
+				if e.RequestID == "" {
+					logWarnf("api_request has empty request_id (session_id=%s)", e.SessionID)
+				}
+				inserted, err := db.Insert(e)
+				if err != nil {
 					log.Printf("warn: insert api_request %s: %v", e.RequestID, err)
+				} else if !inserted {
+					logDebugf("skip duplicate request_id=%s", e.RequestID)
 				}
 			}
 		}
@@ -180,14 +222,24 @@ func forward(url string, origHeaders http.Header, body []byte) {
 	if req.Header.Get("Content-Type") == "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	start := time.Now()
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Printf("forward %s: %v", url, err)
 		return
 	}
-	resp.Body.Close()
+	ms := time.Since(start).Milliseconds()
 	if resp.StatusCode >= 400 {
-		log.Printf("forward %s: remote returned %d", url, resp.StatusCode)
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		resp.Body.Close()
+		reqSnippet := body
+		if len(reqSnippet) > 512 {
+			reqSnippet = reqSnippet[:512]
+		}
+		logWarnf("forward %s: %d (%dms) response=%s req_snippet=%s", url, resp.StatusCode, ms, strings.TrimSpace(string(errBody)), reqSnippet)
+	} else {
+		resp.Body.Close()
+		logDebugf("forward %s: %d (%dms)", url, resp.StatusCode, ms)
 	}
 }
 

@@ -46,8 +46,14 @@ None. Fully local. SQLite only. No cloud dependency.
 Never use `managed-settings.json` — all config in `settings.json` only.
 All env vars (`CLAUDE_CODE_ENABLE_TELEMETRY`, `OTEL_LOGS_EXPORTER`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_PROTOCOL`) go in `settings.json` `env` block.
 `otelHeadersHelper` in `settings.json` points to a script that returns GCP auth headers as JSON — Claude Code calls it before each OTLP export and attaches the headers to requests (including to localhost:4318).
-`CLAUDE_OTLP_FORWARD_ENDPOINT` is read by the `serve` process, not Claude Code — set it in the daemon's env (launchd plist `EnvironmentVariables`, or shell export), NOT in `settings.json`.
+`CLAUDE_OTLP_FORWARD_ENDPOINT` is read by the `serve` process — export it in `~/.zshenv`, then start daemon from shell (NOT via launchd plist `EnvironmentVariables` — launchd doesn't source shell profiles). Self-daemonization inherits the env.
+Start/restart daemon: `kill $(pgrep claude-otlp); ~/.local/bin/claude-otlp serve`
+Verify forwarding active: `/tmp/claude-otlp.log` startup line must contain `forwarding to https://telemetry.googleapis.com` — if absent, env var was missing at start time.
+BigQuery haiku entries with `cache_read_tokens: 0` and cost ~$0.0005 are `otelHeadersHelper` hook calls, not real model sessions.
 GCP forwarding works by passing the incoming request headers through unchanged — the Bearer token from `otelHeadersHelper` is already present in the request arriving at localhost:4318.
+GCP 400s on forward: stale `otelHeadersHelper` token (tokens expire ~1hr). Fix: restart daemon.
+Cloud Logging log name: `projects/moritzschmitz-oviva/logs/claude-code` (NOT `logs/api_request`). Sink filter: `resource.labels.job="claude-code"`.
+BigQuery live table: `claude_code` (sink writes log `claude-code` → table `claude_code`). `api_request` table is stale (separate ingestion path no longer active).
 Binary installs to `~/.local/bin/` via `go build -o ~/.local/bin/claude-otlp ./cmd/claude-otlp`.
 
 ## Session ID
@@ -58,3 +64,4 @@ Binary installs to `~/.local/bin/` via `go build -o ~/.local/bin/claude-otlp ./c
 
 Run daemon foreground (captures live payloads): `_CLAUDE_OTLP_DAEMON=1 ~/.local/bin/claude-otlp serve --addr localhost:4318`
 `serve` self-daemonizes by default (exits if port already open); `--foreground` flag also bypasses.
+Log verbosity: `CLAUDE_OTLP_LOG_LEVEL=debug` (also `info`, `warn`; default `info`). Logs at `/tmp/claude-otlp.log`.

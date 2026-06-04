@@ -68,8 +68,8 @@ func (s *DB) migrate() error {
 	return err
 }
 
-func (s *DB) Insert(r otlp.ApiRequest) error {
-	_, err := s.db.Exec(`
+func (s *DB) Insert(r otlp.ApiRequest) (bool, error) {
+	result, err := s.db.Exec(`
 		INSERT OR IGNORE INTO api_requests
 			(session_id, request_id, cost_usd, input_tokens, output_tokens,
 			 cache_read_tokens, cache_creation_tokens, model, ts)
@@ -79,7 +79,11 @@ func (s *DB) Insert(r otlp.ApiRequest) error {
 		r.CacheReadTokens, r.CacheCreationTokens,
 		r.Model, r.TimeUnixNano,
 	)
-	return err
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	return n > 0, err
 }
 
 func (s *DB) SetSpendOverride(month string, targetUSD float64) error {
