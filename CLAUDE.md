@@ -49,11 +49,8 @@ All env vars (`CLAUDE_CODE_ENABLE_TELEMETRY`, `OTEL_LOGS_EXPORTER`, `OTEL_EXPORT
 `CLAUDE_OTLP_FORWARD_ENDPOINT` is read by the `serve` process — export it in `~/.zshenv`, then start daemon from shell (NOT via launchd plist `EnvironmentVariables` — launchd doesn't source shell profiles). Self-daemonization inherits the env.
 Start/restart daemon: `kill $(pgrep claude-otlp); ~/.local/bin/claude-otlp serve`
 Verify forwarding active: `/tmp/claude-otlp.log` startup line must contain `forwarding to https://telemetry.googleapis.com` — if absent, env var was missing at start time.
-BigQuery haiku entries with `cache_read_tokens: 0` and cost ~$0.0005 are `otelHeadersHelper` hook calls, not real model sessions.
 GCP forwarding works by passing the incoming request headers through unchanged — the Bearer token from `otelHeadersHelper` is already present in the request arriving at localhost:4318.
 GCP 400s on forward: stale `otelHeadersHelper` token (tokens expire ~1hr). Fix: restart daemon.
-Cloud Logging log name: `projects/moritzschmitz-oviva/logs/claude-code` (NOT `logs/api_request`). Sink filter: `resource.labels.job="claude-code"`.
-BigQuery live table: `claude_code` (sink writes log `claude-code` → table `claude_code`). `api_request` table is stale (separate ingestion path no longer active).
 Binary installs to `~/.local/bin/` via `go build -o ~/.local/bin/claude-otlp ./cmd/claude-otlp`.
 
 ## Session ID
